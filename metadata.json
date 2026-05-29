@@ -1,0 +1,6 @@
+{
+  "name": "اللحظة الأخيرة",
+  "description": "منصة إنسانية دافئة لتوثيق وحفظ اللحظات والكلمات الأخيرة والذكريات المؤثرة مع من نحب.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
