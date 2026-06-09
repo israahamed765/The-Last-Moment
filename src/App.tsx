@@ -1,716 +1,567 @@
 import React, { useState, useEffect } from 'react';
-import { MockState, Post, Comment, User, ReactionType, Order, Notification } from './types';
-import { Navbar } from './components/Navbar';
-import { Feed } from './components/Feed';
-import { ProfileView } from './components/ProfileView';
-import { AuthModal } from './components/AuthModal';
-import { AuthOnboarding } from './components/AuthOnboarding';
-import { CreatePostModal } from './components/CreatePostModal';
-import { CheckoutModal } from './components/CheckoutModal';
-import { BottomNavigation } from './components/BottomNavigation';
-import { NotificationsFeed } from './components/NotificationsFeed';
-import { Heart, Sparkles, Loader2, RefreshCw } from 'lucide-react';
-import { useLanguage } from './context/LanguageContext';
+import { translations } from './i18n';
+import { Memorial, UserStats } from './types';
+import Timeline from './components/Timeline';
+import CreateForm from './components/CreateForm';
+import UserProfile from './components/UserProfile';
+import SolaceWall from './components/SolaceWall';
+import CreatorProfileView from './components/CreatorProfileView';
+import NotificationsView from './components/NotificationsView';
+import SanctuaryChatView from './components/SanctuaryChatView';
+import AuthScreens from './components/AuthScreens';
+import { GlassWater, BookOpen, User, Sparkles, Feather, Heart, MailOpen, Bell, MessageSquare, Settings, Home, Compass, PlusSquare, LogOut, Globe } from 'lucide-react';
 
 export default function App() {
-  const { language, t } = useLanguage();
-  const [session, setSession] = useState<MockState>({
-    users: [],
-    posts: [],
-    comments: [],
-    orders: [],
-    currentUser: null,
-    notifications: [],
+  // Global states
+  const [language, setLanguage] = useState<'en' | 'ar'>('ar'); // Default to Arabic for native showcase representation
+  const [activeTab, setActiveTab] = useState<'timeline' | 'solace-wall' | 'create' | 'profile' | 'notifications' | 'messages'>('timeline');
+  const [selectedCreatorId, setSelectedCreatorId] = useState<string | null>(null);
+  const [memorials, setMemorials] = useState<Memorial[]>([]);
+  
+  // Real login persistence from User request
+  const [isLoggedIn, setIsLoggedIn] = useState(() => {
+    return localStorage.getItem('is_logged_in') === 'true';
   });
-  const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'feed' | 'profile' | 'notifications'>('feed');
-  const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
 
-  // Real-time supportive notifications & companion stats
-  const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [activeToasts, setActiveToasts] = useState<{ id: string; text: string; avatar: string }[]>([]);
+  const [keeperEmail, setKeeperEmail] = useState(() => {
+    return localStorage.getItem('keeper_email') || 'visitor.companion@sanctuary.org';
+  });
 
-  // Modal states
-  const [isAuthOpen, setIsAuthOpen] = useState(false);
-  const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
-  const [selectedPostForCheckout, setSelectedPostForCheckout] = useState<Post | null>(null);
+  const [keeperName, setKeeperName] = useState(() => {
+    const local = localStorage.getItem('keeper_name');
+    return local || 'Guest Rememberer';
+  });
 
-  // Load dataset from backend on load
-  const loadDataset = async () => {
-    try {
-      setLoading(true);
-      const response = await fetch('/api/data');
-      if (!response.ok) throw new Error('Failed to load database from server');
-      const data = await response.json();
+  const [keeperAvatar, setKeeperAvatar] = useState(() => {
+    return localStorage.getItem('keeper_avatar') || '✨';
+  });
 
-      let activeUser = null;
-      if (typeof window !== 'undefined') {
-        const storedUserId = localStorage.getItem('last_moment_current_user_id');
-        if (storedUserId) {
-          activeUser = data.users.find((u: User) => u.id === storedUserId) || null;
-        }
+  const [stats, setStats] = useState<UserStats>(() => {
+    const stored = localStorage.getItem('keeper_stats');
+    if (stored) {
+      try {
+        return JSON.parse(stored);
+      } catch (e) {
+        // fallback
       }
+    }
+    return {
+      memorialsCreated: 2,
+      candlesLit: 15,
+      prayersContributed: 8
+    };
+  });
 
-      setSession({
-        users: data.users || [],
-        posts: data.posts || [],
-        comments: data.comments || [],
-        orders: data.orders || [],
-        currentUser: activeUser,
-        notifications: data.notifications || [],
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Apply Document Direction based on selected language
+  useEffect(() => {
+    document.documentElement.dir = language === 'ar' ? 'rtl' : 'ltr';
+    document.documentElement.lang = language;
+  }, [language]);
+
+  // Handle localstorage credentials saving
+  useEffect(() => {
+    localStorage.setItem('keeper_name', keeperName);
+    localStorage.setItem('is_logged_in', isLoggedIn ? 'true' : 'false');
+    localStorage.setItem('keeper_email', keeperEmail);
+  }, [keeperName, isLoggedIn, keeperEmail]);
+
+  // Sync stats updates
+  useEffect(() => {
+    localStorage.setItem('keeper_stats', JSON.stringify(stats));
+  }, [stats]);
+
+  // Fetch current user details and stats from the backend to ensure absolute synchronization & prevent mix-ups!
+  useEffect(() => {
+    const fetchCurrentUserStats = async () => {
+      if (!isLoggedIn || !keeperEmail) return;
+      try {
+        const response = await fetch(`/api/auth/current-user`, {
+          headers: {
+            'x-user-email': keeperEmail
+          }
+        });
+        if (response.ok) {
+          const userData = await response.json();
+          if (userData && userData.stats) {
+            setStats(userData.stats);
+            if (userData.name) setKeeperName(userData.name);
+            if (userData.avatar) {
+              setKeeperAvatar(userData.avatar);
+              localStorage.setItem('keeper_avatar', userData.avatar);
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Error fetching current user stats:', err);
+      }
+    };
+    
+    fetchCurrentUserStats();
+  }, [isLoggedIn, keeperEmail]);
+
+  // Fetch initial memorials from our Express + Vite API
+  const fetchMemorials = async () => {
+    try {
+      const response = await fetch('/api/memorials', {
+        headers: {
+          'x-user-email': keeperEmail
+        }
       });
+      if (response.ok) {
+        const data = await response.json();
+        setMemorials(data);
+      }
     } catch (err) {
-      console.error("Error loading server-side memory records:", err);
+      console.error('API connection err:', err);
     } finally {
-      setLoading(false);
+      setIsLoading(false);
     }
   };
 
   useEffect(() => {
-    loadDataset();
-  }, []);
-
-  const currentUser = session.currentUser;
-
-  // Fetch companion interaction logs
-  const fetchNotifications = async (userId: string) => {
-    try {
-      const res = await fetch(`/api/notifications?userId=${userId}`);
-      if (!res.ok) return;
-      const data = await res.json();
-      if (data.success && data.notifications) {
-        setNotifications((prev) => {
-          const fresh = data.notifications;
-          // Trigger slide-in toasts for any fresh, unread notification that we haven't seen in our current list
-          const newUnreads = fresh.filter((fn: any) => {
-            const isUnread = !fn.read;
-            const alreadyExists = prev.some((o) => o.id === fn.id);
-            return isUnread && !alreadyExists;
-          });
-
-          newUnreads.forEach((un: any) => {
-            const toastId = `toast_${Date.now()}_${Math.random()}`;
-            const alertText = language === 'ar'
-              ? un.type === 'comment'
-                ? `${un.sender.name} ترك رسالة مؤازرة على أثرك`
-                : un.type === 'reaction'
-                ? `${un.sender.name} تفاعل مع أثرك الخالد`
-                : `${un.sender.name} بدأ بمتابعتك الآن`
-              : un.type === 'comment'
-              ? `${un.sender.name} left a word of support on your legacy`
-              : un.type === 'reaction'
-              ? `${un.sender.name} reacted to your immortal memory`
-              : `${un.sender.name} started following you now`;
-
-            setActiveToasts((t) => [...t, { id: toastId, text: alertText, avatar: un.sender.avatar }]);
-            setTimeout(() => {
-              setActiveToasts((t) => t.filter((item) => item.id !== toastId));
-            }, 4500);
-          });
-
-          return fresh;
-        });
-      }
-    } catch (err) {
-      console.error("Error fetching notifications:", err);
+    if (isLoggedIn) {
+      fetchMemorials();
     }
-  };
+  }, [isLoggedIn, keeperEmail]);
 
-  useEffect(() => {
-    if (currentUser) {
-      fetchNotifications(currentUser.id);
-      const interval = setInterval(() => {
-        fetchNotifications(currentUser.id);
-      }, 6000);
-      return () => clearInterval(interval);
+  const handleLoginSuccess = (email: string, name: string, bio: string, userStats: any, avatar?: string) => {
+    setKeeperEmail(email);
+    setKeeperName(name);
+    if (userStats) {
+      setStats(userStats);
+    }
+    if (avatar) {
+      setKeeperAvatar(avatar);
+      localStorage.setItem('keeper_avatar', avatar);
     } else {
-      setNotifications([]);
+      setKeeperAvatar('✨');
+      localStorage.setItem('keeper_avatar', '✨');
     }
-  }, [currentUser?.id]);
-
-  // 1. Empathy reactions switcher logic calling the Express backend
-  const handleReact = async (postId: string, reactionType: ReactionType) => {
-    if (!currentUser) {
-      setIsAuthOpen(true);
-      return;
-    }
-
-    try {
-      const response = await fetch('/api/posts/react', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          postId,
-          userId: currentUser.id,
-          reactionType
-        })
-      });
-      const resData = await response.json();
-      if (resData.success && resData.post) {
-        setSession((prev) => {
-          const updatedPosts = prev.posts.map((p) => p.id === postId ? resData.post : p);
-          return { ...prev, posts: updatedPosts };
-        });
-      }
-    } catch (err) {
-      console.error("Error setting reaction:", err);
+    setIsLoggedIn(true);
+    localStorage.setItem('is_logged_in', 'true');
+    localStorage.setItem('keeper_email', email);
+    localStorage.setItem('keeper_name', name);
+    if (userStats) {
+      localStorage.setItem('keeper_stats', JSON.stringify(userStats));
     }
   };
 
-  // 2. Add custom support comment calling the Express backend
-  const handleAddComment = async (postId: string, content: string) => {
-    if (!currentUser) {
-      setIsAuthOpen(true);
-      return;
-    }
-
-    try {
-      const response = await fetch('/api/comments', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          postId,
-          userId: currentUser.id,
-          content
-        })
-      });
-      const resData = await response.json();
-      if (resData.success && resData.comment) {
-        setSession((prev) => ({
-          ...prev,
-          comments: [resData.comment, ...prev.comments]
-        }));
-      }
-    } catch (err) {
-      console.error("Error adding support message:", err);
-    }
+  // Update a single memorial inside list
+  const handleUpdateMemorial = (updated: Memorial) => {
+    setMemorials(prev => prev.map(m => m.id === updated.id ? updated : m));
   };
 
-  // 3. Document a new Last Moment memory calling the Express backend
-  const handleAddPost = async (title: string, content: string, category: string, imageUrl?: string, isPrivate?: boolean) => {
-    if (!currentUser) {
-      setIsAuthOpen(true);
-      return;
-    }
-
-    try {
-      const response = await fetch('/api/posts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: currentUser.id,
-          title,
-          content,
-          category,
-          imageUrl,
-          isPrivate
-        })
-      });
-      const resData = await response.json();
-      if (resData.success && resData.post) {
-        setSession((prev) => ({
-          ...prev,
-          posts: [resData.post, ...prev.posts]
-        }));
-
-        // If user submitted it as private but is not premium yet, direct them to upgrade premium!
-        if (isPrivate && !currentUser.isPremium) {
-          alert("لقد قمت باختيار حفظ الذكرى في الخزنة الرقمية المشفرة. يرجى تفعيل باقة الاشتراك المميزة (Premium Archive) الآن من الشريط الجانبي لتصفح وتأكيد خزنتك الحصرية!");
-        }
-      }
-    } catch (err) {
-      console.error("Error uploading post:", err);
-    }
+  // Add new memorial and prepend to the feed
+  const handlePublishMemorial = (newMemorial: Memorial) => {
+    setMemorials(prev => [newMemorial, ...prev]);
   };
 
-  // 3.5 Upgrade user premium vault subscription
-  const handleUpgradePremium = async (userId: string, activate: boolean) => {
-    try {
-      const response = await fetch('/api/users/premium', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId, activate })
-      });
-      const resData = await response.json();
-      if (resData.success && resData.user) {
-        // Update both user list & current selection state
-        setSession((prev) => {
-          const updatedUsers = prev.users.map(u => u.id === userId ? resData.user : u);
-          const updatedCurrentUser = prev.currentUser?.id === userId ? resData.user : prev.currentUser;
-          return {
-            ...prev,
-            users: updatedUsers,
-            currentUser: updatedCurrentUser
-          };
-        });
-      }
-    } catch (err) {
-      console.error("Error setting premium subscription state:", err);
-    }
+  // Stats increment helpers
+  const incrementCandleCount = (offset: number = 1) => {
+    setStats(prev => ({ ...prev, candlesLit: Math.max(0, prev.candlesLit + offset) }));
   };
 
-  // 3.6 Create a printed merchandise canvas order
-  const handleCreateOrder = async (orderData: {
-    userId: string;
-    postId: string;
-    productType: 'canvas' | 'book' | 'wooden_box';
-    customTextOption: string;
-    customerName: string;
-    shippingAddress: string;
-    phoneNumber: string;
-    price: number;
-  }) => {
-    try {
-      const response = await fetch('/api/orders', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(orderData)
-      });
-      const resData = await response.json();
-      if (resData.success && resData.order) {
-        setSession((prev) => ({
-          ...prev,
-          orders: [resData.order, ...prev.orders]
-        }));
-        return true;
-      }
-      return false;
-    } catch (err) {
-      console.error("Error committing printed merchandise order:", err);
-      return false;
-    }
+  const incrementPrayerCount = (offset: number = 1) => {
+    setStats(prev => ({ ...prev, prayersContributed: Math.max(0, prev.prayersContributed + offset) }));
   };
 
-  // 4. Custom user sign-up / register calling the Express backend
-  const handleRegisterUser = async (userData: {
-    name: string;
-    username: string;
-    email: string;
-    password?: string;
-    bio: string;
-    avatar: string;
-  }): Promise<boolean> => {
-    try {
-      const response = await fetch('/api/users/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(userData)
-      });
-      const resData = await response.json();
-      if (resData.success && resData.user) {
-        localStorage.setItem('last_moment_current_user_id', resData.user.id);
-        setSession((prev) => ({
-          ...prev,
-          users: [...prev.users, resData.user],
-          currentUser: resData.user
-        }));
-        return true;
-      }
-      return false;
-    } catch (err) {
-      console.error("Error registering user with backend:", err);
-      return false;
-    }
+  const incrementMemorialStats = () => {
+    setStats(prev => ({ ...prev, memorialsCreated: prev.memorialsCreated + 1 }));
   };
 
-  // 4.5. Custom system login calling the Express backend
-  const handleLoginUser = async (loginQuery: string, password?: string): Promise<User | null> => {
-    try {
-      const response = await fetch('/api/users/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ loginQuery, password })
-      });
-      const resData = await response.json();
-      if (resData.success && resData.user) {
-        localStorage.setItem('last_moment_current_user_id', resData.user.id);
-        setSession((prev) => ({
-          ...prev,
-          currentUser: resData.user
-        }));
-        return resData.user;
-      }
-      return null;
-    } catch (err) {
-      console.error("Error logging in user with backend:", err);
-      return null;
-    }
+  const handleTabClick = (tab: 'timeline' | 'solace-wall' | 'create' | 'profile' | 'notifications' | 'messages') => {
+    setActiveTab(tab);
+    setSelectedCreatorId(null);
   };
 
-  // 5. Select/Switch active user session
-  const handleSelectUser = (user: User) => {
-    localStorage.setItem('last_moment_current_user_id', user.id);
-    setSession((prev) => ({
-      ...prev,
-      currentUser: user
-    }));
-  };
+  const t = translations[language];
 
-  // 6. Logout / Sign-out action
-  const handleLogout = () => {
-    localStorage.removeItem('last_moment_current_user_id');
-    setSession((prev) => ({
-      ...prev,
-      currentUser: null
-    }));
-    setIsAuthOpen(true);
-  };
-
-  // 6.2 Mark notification list as read
-  const handleMarkNotificationsRead = async (notificationId?: string) => {
-    if (!currentUser) return;
-    try {
-      const response = await fetch('/api/notifications/read', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: currentUser.id,
-          notificationId
-        })
-      });
-      const data = await response.json();
-      if (data.success && data.notifications) {
-        setNotifications(data.notifications);
-      }
-    } catch (err) {
-      console.error("Error marking status as read:", err);
-    }
-  };
-
-  // 6.4 Clear entire notification register
-  const handleClearNotifications = async () => {
-    if (!currentUser) return;
-    try {
-      const response = await fetch('/api/notifications/clear', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: currentUser.id })
-      });
-      const data = await response.json();
-      if (data.success) {
-        setNotifications([]);
-      }
-    } catch (err) {
-      console.error("Error clearing notifications:", err);
-    }
-  };
-
-  // 6.6 Toggle follow/unfollow companion chronicler relationship
-  const handleFollowUser = async (targetId: string) => {
-    if (!currentUser) {
-      setIsAuthOpen(true);
-      return;
-    }
-    try {
-      const response = await fetch('/api/users/follow', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: currentUser.id,
-          targetId
-        })
-      });
-      const data = await response.json();
-      if (data.success && data.user) {
-        // update follow state in session dataset
-        setSession((prev) => {
-          const updatedUsers = prev.users.map(u => u.id === currentUser.id ? data.user : u);
-          return {
-            ...prev,
-            users: updatedUsers,
-            currentUser: data.user
-          };
-        });
-        // fetch notifications immediately
-        fetchNotifications(currentUser.id);
-      }
-    } catch (err) {
-      console.error("Error toggling follow relationship:", err);
-    }
-  };
-
-  // 7. User profile card edit calling the Express backend
-  const handleUpdateBio = async (newName: string, newBio: string) => {
-    if (!currentUser) return;
-
-    try {
-      const response = await fetch('/api/users/update', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: currentUser.id,
-          name: newName,
-          bio: newBio
-        })
-      });
-      const resData = await response.json();
-      if (resData.success && resData.user) {
-        const updatedUser = resData.user;
-        const updatedUsersList = session.users.map((u) => u.id === currentUser.id ? updatedUser : u);
-        
-        // Reflect profile change dynamically on prior posts and comments displayed in client
-        const updatedPosts = session.posts.map((post) => {
-          if (post.userId === currentUser.id) {
-            return {
-              ...post,
-              authorName: newName
-            };
-          }
-          return post;
-        });
-
-        const updatedComments = session.comments.map((comm) => {
-          if (comm.userId === currentUser.id) {
-            return {
-              ...comm,
-              authorName: newName
-            };
-          }
-          return comm;
-        });
-
-        setSession((prev) => ({
-          ...prev,
-          users: updatedUsersList,
-          currentUser: updatedUser,
-          posts: updatedPosts,
-          comments: updatedComments
-        }));
-      }
-    } catch (err) {
-      console.error("Error setting user modifications:", err);
-    }
-  };
-
-  // Nav helpers
-  const handleViewPostDetails = (post: Post) => {
-    setActiveTab('feed');
-    setTimeout(() => {
-      const element = document.getElementById(`post-card-${post.id}`);
-      if (element) {
-        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        element.classList.add('ring-2', 'ring-accent-gold/40');
-        setTimeout(() => {
-          element.classList.remove('ring-2', 'ring-accent-gold/40');
-        }, 1500);
-      }
-    }, 100);
-  };
-
-  const handleSelectOwnProfile = () => {
-    if (currentUser) {
-      setSelectedProfileId(currentUser.id);
-      setActiveTab('profile');
-    } else {
-      setIsAuthOpen(true);
-    }
-  };
-
-  const handleAuthorClick = (userId: string) => {
-    setSelectedProfileId(userId);
-    setActiveTab('profile');
-  };
-
-  // Fetch profiles stats
-  const profileToView = session.users.find((u) => u.id === (selectedProfileId || currentUser?.id)) || currentUser;
-  const profilePosts = session.posts.filter((p) => p.userId === profileToView?.id);
-  const totalReactions = profilePosts.reduce((acc, p) => p.reactions.affect + p.reactions.legacy + p.reactions.pray + acc, 0);
-
-  // Elegant cozy Arabic loader state
-  if (loading) {
+  // Auth Guard Gatekeeper
+  if (!isLoggedIn) {
     return (
-      <div className="min-h-screen bg-warm-bg flex flex-col items-center justify-center p-6 text-center">
-        <div className="space-y-4">
-          <div className="relative inline-flex items-center justify-center">
-            {/* Soft breathing halo design */}
-            <span className="absolute w-16 h-16 rounded-full bg-accent-gold/10 animate-ping" />
-            <span className="w-12 h-12 rounded-full bg-accent-gold/15 flex items-center justify-center border border-accent-gold/20">
-              <Heart size={22} className="text-accent-gold fill-current animate-pulse" />
-            </span>
-          </div>
-          
-          <div>
-            <h3 className="font-serif font-bold text-lg text-charcoal">اللحظة الأخيرة</h3>
-            <p className="text-xs text-charcoal-light/70 mt-1 max-w-xs mx-auto leading-relaxed">
-              يرجى الانتظار قليلاً بينما نفتح خزائن الأثر ونسترجع الكلمات الطيبة المتبقية...
-            </p>
-          </div>
-          
-          <div className="flex justify-center items-center gap-1.5 text-xs text-accent-sage font-medium">
-            <Loader2 size={14} className="animate-spin text-accent-gold" />
-            <span>جاري استعادة سجل النداء الخالد...</span>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // App Protected Checkpoint: Redirect to custom Onboarding & Auth flow if unauthenticated
-  if (!currentUser) {
-    return (
-      <AuthOnboarding
-        users={session.users}
-        onSelectUser={handleSelectUser}
-        onRegisterUser={handleRegisterUser}
-        onLoginUser={handleLoginUser}
+      <AuthScreens
+        language={language}
+        onLoginSuccess={handleLoginSuccess}
+        onSetLanguage={setLanguage}
       />
     );
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-warm-bg font-sans text-charcoal">
+    <div className="min-h-screen bg-bg-serene text-slate-800 flex flex-col md:flex-row transition-all duration-300">
       
-      {/* Premium Navigation */}
-      <Navbar
-        currentUser={currentUser}
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
-        onOpenAuth={() => setIsAuthOpen(true)}
-        onSelectOwnProfile={handleSelectOwnProfile}
-        onLogout={handleLogout}
-        unreadCount={notifications.filter((n) => !n.read).length}
-      />
+      {/* 1. INSTAGRAM WEB-STYLE DESKTOP LEFT SIDEBAR */}
+      <aside className="hidden md:flex flex-col fixed inset-y-0 start-0 w-64 lg:w-72 bg-white border-e border-surface-container/80 p-6 z-40 justify-between">
+        <div className="space-y-8">
+          {/* Brand Lettering Signature (Instagram Calligraphy Style but Serif Cozy) */}
+          <div className="cursor-pointer py-2 px-1" onClick={() => handleTabClick('timeline')}>
+            <h1 className="text-2xl font-serif font-black tracking-tight bg-gradient-to-r from-primary to-amber-700 bg-clip-text text-transparent">
+              {language === 'ar' ? 'اللحظة الأخيرة' : 'The Last Moment'}
+            </h1>
+            <span className="text-[9px] text-stone-400 font-mono tracking-widest block mt-0.5 uppercase">
+              {t.appSubtitle}
+            </span>
+          </div>
 
-      {/* Main Container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 md:py-10 pb-20 md:pb-10">
-        
-        {activeTab === 'feed' ? (
-          <Feed
-            posts={session.posts}
-            comments={session.comments}
-            currentUser={currentUser}
-            orders={session.orders}
-            onReact={handleReact}
-            onAddComment={handleAddComment}
-            onOpenCreatePost={() => (currentUser ? setIsCreateOpen(true) : setIsAuthOpen(true))}
-            onAuthorClick={handleAuthorClick}
-            onOpenOrderModal={(post) => {
-              if (!currentUser) {
-                setIsAuthOpen(true);
-              } else {
-                setSelectedPostForCheckout(post);
-                setIsCheckoutOpen(true);
-              }
-            }}
-            onUpgradePremium={handleUpgradePremium}
-          />
-        ) : activeTab === 'notifications' ? (
-          <NotificationsFeed
-            notifications={notifications}
-            onMarkRead={handleMarkNotificationsRead}
-            onClearAll={handleClearNotifications}
-            onViewPost={(postId) => {
-              const post = session.posts.find((p) => p.id === postId);
-              if (post) handleViewPostDetails(post);
-            }}
-            onAuthorClick={handleAuthorClick}
-          />
-        ) : (
-          profileToView && (
-            <ProfileView
-              user={profileToView}
-              isCurrentUser={profileToView.id === currentUser?.id}
-              userPosts={profilePosts}
-              totalReactionsCount={totalReactions}
-              onUpdateBio={handleUpdateBio}
-              onViewPost={handleViewPostDetails}
-              currentUser={currentUser}
-              onFollowUser={handleFollowUser}
-            />
-          )
-        )}
+          {/* Navigation Links List */}
+          <nav className="space-y-1.5 font-sans">
+            {/* Home / Feed */}
+            <button
+              onClick={() => handleTabClick('timeline')}
+              className={`w-full flex items-center gap-4 px-4 py-3 rounded-2xl text-xs font-bold transition-all ${
+                activeTab === 'timeline'
+                  ? 'bg-primary/10 text-primary scale-102 font-extrabold'
+                  : 'text-stone-600 hover:bg-surface-low hover:text-slate-900'
+              }`}
+            >
+              <Home className="w-5 h-5" />
+              <span className="text-sm">{language === 'ar' ? 'الرئيسية' : 'Home'}</span>
+            </button>
 
-      </main>
+            {/* Explore / Solace Wall */}
+            <button
+              onClick={() => handleTabClick('solace-wall')}
+              className={`w-full flex items-center gap-4 px-4 py-3 rounded-2xl text-xs font-bold transition-all ${
+                activeTab === 'solace-wall'
+                  ? 'bg-primary/10 text-primary scale-102 font-extrabold'
+                  : 'text-stone-600 hover:bg-surface-low hover:text-slate-900'
+              }`}
+            >
+              <Compass className="w-5 h-5" />
+              <span className="text-sm">{language === 'ar' ? 'اكتشاف السكينة' : 'Explore Solace'}</span>
+            </button>
 
-      {/* Comforting Humanistic Footer */}
-      <footer className="bg-white border-t border-warm-beige py-6 mt-12 pb-24 md:pb-6">
-        <div className="max-w-7xl mx-auto px-4 text-center space-y-2">
-          <p className="text-xs text-charcoal-light/65 font-serif font-semibold">
-            {t('appFooter')}
-          </p>
-          <p className="text-[10px] text-charcoal-light/40 font-sans">
-            {t('appCopyright')}
-          </p>
+            {/* Direct Messages */}
+            <button
+              onClick={() => handleTabClick('messages')}
+              className={`w-full flex items-center gap-4 px-4 py-3 rounded-2xl text-xs font-bold transition-all relative ${
+                activeTab === 'messages'
+                  ? 'bg-primary/10 text-primary scale-102 font-extrabold'
+                  : 'text-stone-600 hover:bg-surface-low hover:text-slate-900'
+              }`}
+            >
+              <MessageSquare className="w-5 h-5" />
+              <span className="text-sm">{language === 'ar' ? 'الرسائل' : 'Messages'}</span>
+              <span className="absolute end-4 top-3.5 h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
+            </button>
+
+            {/* Alerts / Notifications */}
+            <button
+              onClick={() => handleTabClick('notifications')}
+              className={`w-full flex items-center gap-4 px-4 py-3 rounded-2xl text-xs font-bold transition-all ${
+                activeTab === 'notifications'
+                  ? 'bg-primary/10 text-primary scale-102 font-extrabold'
+                  : 'text-stone-600 hover:bg-surface-low hover:text-slate-900'
+              }`}
+            >
+              <Heart className="w-5 h-5" />
+              <span className="text-sm">{language === 'ar' ? 'الإشعارات' : 'Notifications'}</span>
+            </button>
+
+            {/* Create Memorial Monument */}
+            <button
+              onClick={() => handleTabClick('create')}
+              className={`w-full flex items-center gap-4 px-4 py-3 rounded-2xl text-xs font-bold transition-all ${
+                activeTab === 'create'
+                  ? 'bg-primary/10 text-primary scale-102 font-extrabold'
+                  : 'text-stone-600 hover:bg-surface-low hover:text-slate-900'
+              }`}
+            >
+              <PlusSquare className="w-5 h-5" />
+              <span className="text-sm">{language === 'ar' ? 'نشر ذكرى جديدة' : 'Create Memorial'}</span>
+            </button>
+
+            {/* Keeper Profile Custom Bubble link */}
+            <button
+              onClick={() => handleTabClick('profile')}
+              className={`w-full flex items-center gap-4 px-4 py-3 rounded-2xl text-xs font-bold transition-all ${
+                activeTab === 'profile'
+                  ? 'bg-primary/10 text-primary scale-102 font-extrabold'
+                  : 'text-stone-600 hover:bg-surface-low hover:text-slate-900'
+              }`}
+            >
+              <div className={`w-6 h-6 rounded-full overflow-hidden border flex items-center justify-center text-xs ${
+                activeTab === 'profile' ? 'border-primary ring-2 ring-primary/20' : 'border-stone-300'
+              }`}>
+                {keeperAvatar.startsWith('data:image') ? (
+                  <img src={keeperAvatar} alt="Mini Avatar" className="w-full h-full object-cover" />
+                ) : (
+                  <span>{keeperAvatar || '✨'}</span>
+                )}
+              </div>
+              <span className="text-sm">{language === 'ar' ? 'ملفي الشخصي' : 'My Profile'}</span>
+            </button>
+          </nav>
         </div>
-      </footer>
 
-      {/* Bottom Sticky Mobile Navigation */}
-      <BottomNavigation
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
-        unreadCount={notifications.filter(n => !n.read).length}
-        onOpenCreate={() => (currentUser ? setIsCreateOpen(true) : setIsAuthOpen(true))}
-        avatarUrl={currentUser?.avatar}
-        userName={currentUser?.name}
-      />
+        {/* Desktop Sidebar Bottom Accessories */}
+        <div className="space-y-4 pt-4 border-t border-surface-container/60 col-span-1">
+          {/* Quick Info & User check */}
+          <div className="flex items-center gap-3 px-2">
+            <div className="w-8 h-8 rounded-full bg-emerald-50 text-emerald-700 text-xs flex items-center justify-center font-bold">
+              ✓
+            </div>
+            <div className="text-left">
+              <div className="text-[11px] font-bold text-slate-800 line-clamp-1">{keeperName}</div>
+              <div className="text-[9px] text-stone-400 font-mono tracking-wider">VERIFIED KEEPER</div>
+            </div>
+          </div>
 
-      {/* Dynamic Slide-in Supportive Toasts */}
-      <div className="fixed bottom-20 md:bottom-6 left-6 right-6 md:left-auto md:w-96 z-50 space-y-3 pointer-events-none">
-        {activeToasts.map((toast) => (
-          <div
-            key={toast.id}
-            className="pointer-events-auto bg-[#2C2523] text-stone-100 rounded-2xl shadow-xl border border-charcoal/20 flex items-center gap-3 p-4 select-none animate-fadeIn"
-            dir={document.documentElement.dir === 'rtl' ? 'rtl' : 'ltr'}
+          {/* Quick Layout Language switch */}
+          <button
+            onClick={() => setLanguage(language === 'ar' ? 'en' : 'ar')}
+            className="w-full flex items-center justify-between text-[11px] font-mono text-stone-500 hover:text-slate-900 bg-[#FAF8F5] border border-stone-200/50 p-2.5 rounded-xl transition"
           >
-            <img
-              src={toast.avatar}
-              alt=""
-              className="w-10 h-10 rounded-full object-cover border border-white/20 shrink-0"
-              referrerPolicy="no-referrer"
-            />
-            <div className="flex-1 min-w-0">
-              <p className="text-[10px] text-accent-gold font-bold font-serif">
-                {document.documentElement.lang === 'ar' ? 'اللحظة الأخيرة • إشارة وجدانية' : 'The Last Moment • Compassionate Echo'}
-              </p>
-              <p className="text-xs text-stone-200 mt-1 font-sans leading-relaxed">
-                {toast.text}
+            <span className="flex items-center gap-1.5">
+              <Globe className="w-3.5 h-3.5 text-primary" />
+              <span>{language === 'ar' ? 'Layout: Arabic (RTL)' : 'Layout: English (LTR)'}</span>
+            </span>
+            <span className="font-bold underline text-primary">⇅</span>
+          </button>
+        </div>
+      </aside>
+
+      {/* 2. INSTAGRAM-STYLE MOBILE TOP HEADER */}
+      <header className="md:hidden sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-surface-container/60 px-4 py-3.5 flex items-center justify-between">
+        {/* Mobile Left Logo calligraphy style */}
+        <div className="cursor-pointer" onClick={() => handleTabClick('timeline')}>
+          <h1 className="text-xl font-serif font-black tracking-tight text-slate-900 bg-gradient-to-r from-primary to-amber-700 bg-clip-text text-transparent">
+            {language === 'ar' ? 'اللحظة الأخيرة' : 'The Last Moment'}
+          </h1>
+        </div>
+
+        {/* Mobile Right accessories: Message DM & Alerts */}
+        <div className="flex items-center gap-3">
+          {/* Language trigger */}
+          <button
+            onClick={() => setLanguage(language === 'ar' ? 'en' : 'ar')}
+            className="p-1.5 rounded-full hover:bg-stone-50 text-stone-500 active:scale-95 transition"
+            title="Switch Language"
+          >
+            <Globe className="w-4 h-4 text-primary" />
+          </button>
+
+          {/* DM Messenger Icon shortcut */}
+          <button
+            onClick={() => handleTabClick('messages')}
+            className={`p-1.5 rounded-full hover:bg-stone-50 transition relative ${
+              activeTab === 'messages' ? 'text-primary bg-primary/5' : 'text-stone-600'
+            }`}
+          >
+            <MessageSquare className="w-4.5 h-4.5" />
+            <span className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
+          </button>
+
+          {/* Notifications Alerts Icon */}
+          <button
+            onClick={() => handleTabClick('notifications')}
+            className={`p-1.5 rounded-full hover:bg-stone-50 transition ${
+              activeTab === 'notifications' ? 'text-primary bg-primary/5' : 'text-stone-600'
+            }`}
+          >
+            <Heart className="w-4.5 h-4.5" />
+          </button>
+        </div>
+      </header>
+
+      {/* 3. INSTAGRAM-STYLE MOBILE BOTTOM NAVIGATION BAR */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-md border-t border-surface-container/60 flex items-center justify-around py-2.5 px-4 z-40 shadow-lg">
+        {/* Home option */}
+        <button
+          onClick={() => handleTabClick('timeline')}
+          className={`flex flex-col items-center p-2 rounded-full transition active:scale-95 ${
+            activeTab === 'timeline' ? 'text-primary font-bold' : 'text-stone-500'
+          }`}
+        >
+          <Home className="w-5.5 h-5.5" />
+        </button>
+
+        {/* Compass Solace explore option */}
+        <button
+          onClick={() => handleTabClick('solace-wall')}
+          className={`flex flex-col items-center p-2 rounded-full transition active:scale-95 ${
+            activeTab === 'solace-wall' ? 'text-primary' : 'text-stone-500'
+          }`}
+        >
+          <Compass className="w-5.5 h-5.5" />
+        </button>
+
+        {/* PlusSquare Option */}
+        <button
+          onClick={() => handleTabClick('create')}
+          className={`flex flex-col items-center p-2 rounded-full transition active:scale-95 ${
+            activeTab === 'create' ? 'text-primary' : 'text-stone-500'
+          }`}
+        >
+          <PlusSquare className="w-5.5 h-5.5" />
+        </button>
+
+        {/* Chat messenger option */}
+        <button
+          onClick={() => handleTabClick('messages')}
+          className={`flex flex-col items-center p-2 rounded-full transition active:scale-95 ${
+            activeTab === 'messages' ? 'text-primary' : 'text-stone-500'
+          }`}
+        >
+          <MessageSquare className="w-5.5 h-5.5" />
+        </button>
+
+        {/* Live profile bubble option */}
+        <button
+          onClick={() => handleTabClick('profile')}
+          className="flex flex-col items-center p-1 rounded-full transition active:scale-95"
+          id="mobile-nav-btn-profile"
+        >
+          <div className={`w-6 h-6 rounded-full overflow-hidden border flex items-center justify-center text-xs ${
+            activeTab === 'profile' ? 'border-primary ring-2 ring-primary/35' : 'border-stone-300'
+          }`}>
+            {keeperAvatar.startsWith('data:image') ? (
+              <img src={keeperAvatar} alt="My Avatar Bubble" className="w-full h-full object-cover" />
+            ) : (
+              <span>{keeperAvatar || '✨'}</span>
+            )}
+          </div>
+        </button>
+      </nav>
+
+      {/* 4. MAIN CENTRAL SANCTUARY PORTAL VIEWPORT AREA */}
+      <div className="flex-1 flex flex-col min-h-screen md:ps-64 lg:ps-72 pb-16 md:pb-0 transition-all">
+        <main className="flex-1 w-full max-w-7xl mx-auto px-4 md:px-8 py-6">
+          {isLoading ? (
+            <div className="flex flex-col items-center justify-center min-h-[50vh] space-y-3">
+              <div className="w-10 h-10 border-2 border-primary/20 border-t-primary rounded-full animate-spin"></div>
+              <p className="text-xs text-stone-500 font-mono">
+                {language === 'ar' ? 'تهيئة محراب الذكرى الهادئ...' : 'Entering the digital sanctuary...'}
               </p>
             </div>
-            <button
-              onClick={() => setActiveToasts((toastList) => toastList.filter((item) => item.id !== toast.id))}
-              className="text-stone-400 hover:text-white transition-colors cursor-pointer text-xs font-semibold px-2 py-1 rounded hover:bg-white/10"
-            >
-              ×
-            </button>
+          ) : (
+            <div className="opacity-100 transition-opacity duration-300">
+              {selectedCreatorId ? (
+                <CreatorProfileView
+                  creatorId={selectedCreatorId}
+                  language={language}
+                  loggedInUserEmail={keeperEmail}
+                  loggedInUserName={keeperName}
+                  isLoggedIn={isLoggedIn}
+                  onBack={() => setSelectedCreatorId(null)}
+                  onGoToCreateTab={() => {
+                    setSelectedCreatorId(null);
+                    setActiveTab('create');
+                  }}
+                  incrementCandleCount={incrementCandleCount}
+                  incrementPrayerCount={incrementPrayerCount}
+                />
+              ) : (
+                <>
+                  {activeTab === 'timeline' && (
+                    <Timeline
+                      language={language}
+                      memorials={memorials}
+                      keeperName={keeperName}
+                      onUpdateMemorial={handleUpdateMemorial}
+                      incrementCandleCount={incrementCandleCount}
+                      incrementPrayerCount={incrementPrayerCount}
+                      onViewCreatorProfile={(id) => setSelectedCreatorId(id)}
+                    />
+                  )}
+
+                  {activeTab === 'solace-wall' && (
+                    <SolaceWall
+                      language={language}
+                      keeperName={keeperName}
+                      isLoggedIn={isLoggedIn}
+                      onIncrementPrayers={incrementPrayerCount}
+                    />
+                  )}
+
+                  {activeTab === 'create' && (
+                    <CreateForm
+                      language={language}
+                      onPublish={handlePublishMemorial}
+                      incrementMemorialStats={incrementMemorialStats}
+                      goToTimeline={() => setActiveTab('timeline')}
+                    />
+                  )}
+
+                  {activeTab === 'profile' && (
+                    <UserProfile
+                      language={language}
+                      setLanguage={setLanguage}
+                      stats={stats}
+                      keeperName={keeperName}
+                      setKeeperName={setKeeperName}
+                      isLoggedIn={isLoggedIn}
+                      setIsLoggedIn={setIsLoggedIn}
+                      keeperEmail={keeperEmail}
+                      setKeeperEmail={setKeeperEmail}
+                      memorials={memorials}
+                      keeperAvatar={keeperAvatar}
+                      setKeeperAvatar={setKeeperAvatar}
+                      onViewMyPublicProfile={async (id) => {
+                        try {
+                          await fetch('/api/creators', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              id: id,
+                              nameEn: keeperName,
+                              nameAr: keeperName,
+                              roleEn: 'Verified Memory Keeper',
+                              roleAr: 'حارس ذاكرة موثق',
+                              bioEn: 'Keeper of digital light, preserves the final moments and echoes of our loved ones.',
+                              bioAr: 'حارس لشموع المحبة والوفاء، أصون اللحظات الأخيرة وأحفظ الذكرى الطاهرة للراحلين عبر الزمان.',
+                              avatar: keeperAvatar || '✨',
+                              memorialsCount: stats.memorialsCreated,
+                              contributionsCount: stats.candlesLit + stats.prayersContributed,
+                              remembrancesCount: stats.candlesLit * 3
+                            })
+                          });
+                        } catch (err) {
+                           console.error('Error auto-syncing:', err);
+                        }
+                        setSelectedCreatorId(id);
+                      }}
+                    />
+                  )}
+
+                  {activeTab === 'notifications' && (
+                    <NotificationsView
+                      language={language}
+                      onNavigateToCreate={() => setActiveTab('create')}
+                    />
+                  )}
+
+                  {activeTab === 'messages' && (
+                    <SanctuaryChatView
+                      language={language}
+                      userAvatar={keeperAvatar}
+                    />
+                  )}
+                </>
+              )}
+            </div>
+          )}
+        </main>
+
+        {/* Serene Footer */}
+        <footer className="bg-surface-low py-8 border-t border-surface-container mt-12">
+          <div className="max-w-7xl mx-auto px-4 text-center space-y-3">
+            <p className="font-serif text-sm font-medium text-stone-700">
+              منصة اللحظة الأخيرة • {t.appTitle}
+            </p>
+            <p className="text-[10px] text-stone-500 font-mono tracking-widest leading-relaxed">
+              {language === 'ar' 
+                ? 'إن غابوا جَسَداً، بقيت أرواحهم الطاهرة وكلماتهم الجميلة منارات تضيء قلوب المحبين.'
+                : 'Though departed in physical presence, their beautiful words and echoes persist as eternal beacons of peace.'}
+            </p>
+            <div className="text-[9px] text-stone-400 font-mono">
+              &copy; {new Date().getFullYear()} The Last Moment Sanctuary. Complete bilingual LTR & RTL layouts preserved.
+            </div>
           </div>
-        ))}
+        </footer>
       </div>
-
-      {/* Interactivity Modals */}
-      <AuthModal
-        isOpen={isAuthOpen}
-        onClose={() => setIsAuthOpen(false)}
-        users={session.users}
-        currentUser={currentUser}
-        onSelectUser={handleSelectUser}
-        onRegisterUser={(name, username, bio, avatar) => {
-          handleRegisterUser({
-            name,
-            username,
-            email: `${username}@lastmoment.com`,
-            password: '123456',
-            bio,
-            avatar
-          });
-        }}
-      />
-
-      <CreatePostModal
-        isOpen={isCreateOpen}
-        onClose={() => setIsCreateOpen(false)}
-        currentUser={currentUser}
-        onAddPost={handleAddPost}
-      />
-
-      <CheckoutModal
-        isOpen={isCheckoutOpen}
-        onClose={() => setIsCheckoutOpen(false)}
-        post={selectedPostForCheckout}
-        currentUser={currentUser}
-        onAddOrder={handleCreateOrder}
-      />
-
     </div>
   );
 }

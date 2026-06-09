@@ -1,93 +1,119 @@
-export interface User {
+export interface Prayer {
   id: string;
-  name: string;
-  username: string;
-  email: string;
-  avatar: string;
-  bio: string;
-  joinedAt: string;
-  isPremium?: boolean;
-  password?: string;
-  followingIds?: string[];
-}
-
-export type ReactionType = 'affect' | 'legacy' | 'pray';
-
-export interface ReactionDetail {
-  affect: number; // أثّر فيّ
-  legacy: number; // ذكرى طيبة
-  pray: number;   // دعاء
-}
-
-export interface Post {
-  id: string;
-  userId: string;
-  authorName: string;
-  authorAvatar: string;
-  authorUsername: string;
-  title: string;
-  content: string;
-  imageUrl?: string;
-  category: string; // e.g., "أشخاص" | "أماكن" | "رسائل" | "ذكريات"
+  author: string;
+  relationship: string;
+  text: string;
   createdAt: string;
-  reactions: ReactionDetail;
-  userReactions: { [key: string]: ReactionType | null }; // track current user's reaction to this post
-  isPrivate?: boolean;
-  isEncrypted?: boolean;
-}
-
-export interface Comment {
-  id: string;
-  postId: string;
-  userId: string;
-  authorName: string;
-  authorAvatar: string;
-  authorUsername: string;
-  content: string;
-  createdAt: string;
-}
-
-export interface Order {
-  id: string;
-  userId: string;
-  postId: string;
-  postTitle: string;
-  productType: 'canvas' | 'book' | 'wooden_box'; // لوحة جدارية، كتاب الذكريات الباقية، صندوق خشبي منقوش
-  customTextOption: string;
-  customerName: string;
-  shippingAddress: string;
-  phoneNumber: string;
-  price: number;
-  createdAt: string;
-  status: 'pending' | 'shipped';
-}
-
-export interface Notification {
-  id: string;
-  recipientId: string;
-  type: 'comment' | 'reaction' | 'follow';
-  sender: {
-    id: string;
-    name: string;
-    username: string;
-    avatar: string;
+  reactions?: {
+    amen: number;
+    peace: number;
+    rose: number;
   };
-  post?: {
-    id: string;
-    title: string;
-  };
-  commentContent?: string;
-  reactionType?: ReactionType;
+}
+
+export type MemorialCategory = 'wisdom' | 'legacy' | 'farewell' | 'grace' | 'happy';
+
+export type MemorialTheme = 'starry' | 'meadow' | 'sunset' | 'lavender' | 'misty';
+
+export interface Memorial {
+  id: string;
+  nameEn: string;
+  nameAr: string;
+  relationshipEn: string;
+  relationshipAr: string;
+  birthYear: string;
+  passingYear: string;
+  category: MemorialCategory;
+  lastWordsEn: string;
+  lastWordsAr: string;
+  storyEn: string;
+  storyAr: string;
+  theme: MemorialTheme;
+  image?: string; // Base64 image, or generic illustration name/URL
+  candlesCount: number;
+  candlesLitBy: string[]; // List of session ids or names
+  prayers: Prayer[];
   createdAt: string;
+  creatorId?: string;
+  creatorName?: string;
+}
+
+export interface UserStats {
+  memorialsCreated: number;
+  candlesLit: number;
+  prayersContributed: number;
+}
+
+export interface ContributionEvent {
+  id: string;
+  type: 'memorial_created' | 'photo_added' | 'candle_lit' | 'prayer_posted';
+  descriptionEn: string;
+  descriptionAr: string;
+  timeAgoEn: string;
+  timeAgoAr: string;
+}
+
+export interface CreatorProfile {
+  id: string;
+  nameEn: string;
+  nameAr: string;
+  roleEn: string;
+  roleAr: string;
+  bioEn: string;
+  bioAr: string;
+  avatar: string; // emoji or character image reference
+  memorialsCount: number;
+  contributionsCount: number;
+  remembrancesCount: number;
+  followers: string[]; // keeperNames following this user
+  contributionsHistory: ContributionEvent[];
+}
+
+export interface SolaceMessage {
+  id: string;
+  author: string;
+  relationship: string;
+  text: string;
+  createdAt: string;
+  likes: number;
+  creatorId?: string;
+  likedBy?: string[];
+}
+
+export interface MemorialNotification {
+  id: string;
+  titleEn: string;
+  titleAr: string;
+  descriptionEn: string;
+  descriptionAr: string;
+  timeEn: string;
+  timeAr: string;
+  type: 'candle' | 'comment' | 'publish' | 'donation';
   read: boolean;
+  actionLabelEn: string;
+  actionLabelAr: string;
+  extraActionLabelEn?: string;
+  extraActionLabelAr?: string;
 }
 
-export interface MockState {
-  users: User[];
-  posts: Post[];
-  comments: Comment[];
-  orders: Order[];
-  currentUser: User | null;
-  notifications: Notification[];
+export interface ChatMessage {
+  id: string;
+  sender: 'me' | 'other';
+  textEn: string;
+  textAr: string;
+  time: string;
+}
+
+export interface ChatConversation {
+  id: string;
+  userNameEn: string;
+  userNameAr: string;
+  userAvatar: string;
+  statusEn: string;
+  statusAr: string;
+  lastMessageEn: string;
+  lastMessageAr: string;
+  lastMessageTime: string;
+  messages: ChatMessage[];
 }
 

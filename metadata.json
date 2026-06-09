@@ -1,6 +1,6 @@
 {
-  "name": "اللحظة الأخيرة",
-  "description": "منصة إنسانية دافئة لتوثيق وحفظ اللحظات والكلمات الأخيرة والذكريات المؤثرة مع من نحب.",
+  "name": "The Last Moment",
+  "description": "The Last Moment - A social-memorial platform for sharing the final words, lasting memories, and legacies of our loved ones with global bilingual support and peaceful visual templates.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
